@@ -2,15 +2,15 @@ import requests
 from bs4 import BeautifulSoup
 from docx import Document
 
+# ---------- TEXT CLEANING ----------
 def get_text_without_links(el):
-    text = ' '.join(
+    return ' '.join(
         part.strip()
         for part in el.strings
         if not (hasattr(part.parent, 'name') and part.parent.name == 'a')
     )
-    return text
 
-# --- TXT functions ---
+# ---------- TXT EXPORT ----------
 def process_list_items_txt(container_name, element, level, output_lines):
     lis = element.find_all('li')
     for li in lis:
@@ -25,45 +25,18 @@ def process_list_items_txt(container_name, element, level, output_lines):
 def extract_with_nesting_txt(container_name, container, output_lines, level=0):
     if not container:
         return
-    elements = container.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'p', 'ul', 'ol'])
+    elements = container.find_all(['h1','h2','h3','h4','h5','p','ul','ol'])
     for el in elements:
         tag = el.name.upper()
         text = get_text_without_links(el)
         indent = '  ' * level
         if not text:
             continue
-        if tag in ['H1', 'H2', 'H3', 'H4', 'H5']:
+        if tag.startswith('H'):
             heading_level = int(tag[1])
             output_lines.append(f"{indent}{container_name} | {tag} (level {heading_level}): {text}")
         elif tag == 'P':
-            output_lines.append(f"{indent}{container_name} | {tag}: {text}")
-        elif tag in ['UL', 'OL']:
-            output_lines.append(f"{indent}{container_name} | {tag}:")
-            process_list_items_txt(container_name, el, level + 1, output_lines)
-
-def collect_text_set(container):
-    texts = set()
-    for el in container.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'p', 'li']):
-        text = get_text_without_links(el)
-        if text:
-            texts.add(text)
-    return texts
-
-def extract_with_nesting_txt_skip_set(container_name, container, output_lines, skip_set_header, skip_set_footer, level=0):
-    if not container:
-        return
-    elements = container.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'p', 'ul', 'ol'])
-    for el in elements:
-        tag = el.name.upper()
-        text = get_text_without_links(el)
-        indent = '  ' * level
-        if not text or text in skip_set_header or text in skip_set_footer:
-            continue
-        if tag in ['H1', 'H2', 'H3', 'H4', 'H5']:
-            heading_level = int(tag[1])
-            output_lines.append(f"{indent}{container_name} | {tag} (level {heading_level}): {text}")
-        elif tag == 'P':
-            output_lines.append(f"{indent}{container_name} | {tag}: {text}")
+            output_lines.append(f"{indent}{container_name} | P: {text}")
         elif tag in ['UL', 'OL']:
             output_lines.append(f"{indent}{container_name} | {tag}:")
             process_list_items_txt(container_name, el, level + 1, output_lines)
@@ -85,9 +58,6 @@ def save_as_txt(filename, soup, scrape_header, scrape_body, scrape_footer):
         if header:
             header.extract()
 
-    if not scrape_footer and footer:
-        footer.extract()
-
     if scrape_body and body:
         output_lines.append("BODY:")
         extract_with_nesting_txt_skip_set("BODY", body, output_lines, header_texts, footer_texts)
@@ -100,16 +70,46 @@ def save_as_txt(filename, soup, scrape_header, scrape_body, scrape_footer):
     with open(f"{filename}.txt", "w", encoding="utf-8") as f:
         for line in output_lines:
             f.write(line + "\n")
-    print(f"✅ Content saved as {filename}.txt")
+    print(f"✅ Saved as {filename}.txt")
 
-# --- DOCX functions ---
+def collect_text_set(container):
+    texts = set()
+    for el in container.find_all(['h1','h2','h3','h4','h5','p','li']):
+        text = get_text_without_links(el)
+        if text:
+            texts.add(text)
+    return texts
+
+def extract_with_nesting_txt_skip_set(container_name, container, output_lines, skip_header, skip_footer, level=0):
+    if not container:
+        return
+    elements = container.find_all(['h1','h2','h3','h4','h5','p','ul','ol'])
+    for el in elements:
+        tag = el.name.upper()
+        text = get_text_without_links(el)
+        indent = '  ' * level
+        if not text or text in skip_header or text in skip_footer:
+            continue
+        if tag.startswith('H'):
+            heading_level = int(tag[1])
+            output_lines.append(f"{indent}{container_name} | {tag} (level {heading_level}): {text}")
+        elif tag == 'P':
+            output_lines.append(f"{indent}{container_name} | P: {text}")
+        elif tag in ['UL', 'OL']:
+            output_lines.append(f"{indent}{container_name} | {tag}:")
+            process_list_items_txt(container_name, el, level + 1, output_lines)
+
+# ---------- DOCX EXPORT ----------
 def add_runs_from_element(el, para):
+    added = False
     for part in el.strings:
         if hasattr(part.parent, 'name') and part.parent.name == 'a':
             continue
         text = part.strip()
         if text:
             para.add_run(text)
+            added = True
+    return added
 
 def process_list_items_docx(element, level, doc):
     lis = element.find_all('li')
@@ -117,28 +117,34 @@ def process_list_items_docx(element, level, doc):
         para = doc.add_paragraph()
         para.style = 'List Paragraph'
         para.paragraph_format.left_indent = level * 300
-        add_runs_from_element(li, para)
-        for sublist in li.find_all(['ul', 'ol']):
+        added = add_runs_from_element(li, para)
+        if not added:
+            doc._body._element.remove(para._element)
+        for sublist in li.find_all(['ul','ol']):
             process_list_items_docx(sublist, level + 1, doc)
 
 def extract_with_nesting_docx(container, doc, level=0):
     if not container:
         return
-    elements = container.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'p', 'ul', 'ol'])
+    elements = container.find_all(['h1','h2','h3','h4','h5','p','ul','ol'])
     for el in elements:
         tag = el.name.upper()
         indent = level * 300
-        if tag in ['H1', 'H2', 'H3', 'H4', 'H5']:
+        if tag.startswith('H'):
             heading_level = int(tag[1])
             para = doc.add_paragraph()
             para.style = f'Heading {heading_level}'
             para.paragraph_format.left_indent = indent
-            add_runs_from_element(el, para)
+            added = add_runs_from_element(el, para)
+            if not added:
+                doc._body._element.remove(para._element)
         elif tag == 'P':
             para = doc.add_paragraph()
             para.style = 'Normal'
             para.paragraph_format.left_indent = indent
-            add_runs_from_element(el, para)
+            added = add_runs_from_element(el, para)
+            if not added:
+                doc._body._element.remove(para._element)
         elif tag in ['UL', 'OL']:
             process_list_items_docx(el, level + 1, doc)
 
@@ -155,9 +161,6 @@ def save_as_docx(filename, soup, scrape_header, scrape_body, scrape_footer):
         if header:
             header.extract()
 
-    if not scrape_footer and footer:
-        footer.extract()
-
     if scrape_body and body:
         doc.add_paragraph("BODY:")
         extract_with_nesting_docx(body, doc)
@@ -167,41 +170,46 @@ def save_as_docx(filename, soup, scrape_header, scrape_body, scrape_footer):
         extract_with_nesting_docx(footer, doc)
 
     doc.save(f"{filename}.docx")
-    print(f"✅ Content saved as {filename}.docx")
+    print(f"✅ Saved as {filename}.docx")
 
-# --- main scrape ---
+# ---------- MAIN ----------
 def scrape_website(url):
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        scrape_header = input("🔍 Do you want to scrape the HEADER content? (yes/no): ").strip().lower() in ['yes', 'y']
-        scrape_body = input("🔍 Do you want to scrape the BODY content? (yes/no): ").strip().lower() in ['yes', 'y']
-        scrape_footer = input("🔍 Do you want to scrape the FOOTER content? (yes/no): ").strip().lower() in ['yes', 'y']
+        scrape_header = input("🔍 Scrape HEADER? (yes/no): ").strip().lower() in ['yes', 'y']
+        scrape_body = input("🔍 Scrape BODY? (yes/no): ").strip().lower() in ['yes', 'y']
+        scrape_footer = input("🔍 Scrape FOOTER? (yes/no): ").strip().lower() in ['yes', 'y']
 
-        filename = input("📄 Enter a filename (without extension): ").strip()
-        if not filename:
-            filename = "scraped_content"
-
-        filetype = input("💾 What file type do you want to save as? (txt/docx): ").strip().lower()
+        filename = input("📄 Filename (no extension): ").strip() or "scraped_content"
+        filetype = input("💾 Save as txt or docx? ").strip().lower()
 
         if filetype == 'txt':
             save_as_txt(filename, soup, scrape_header, scrape_body, scrape_footer)
         else:
             save_as_docx(filename, soup, scrape_header, scrape_body, scrape_footer)
 
+        other_format = 'docx' if filetype == 'txt' else 'txt'
+        if input(f"💾 Export to {other_format} too? (yes/no): ").strip().lower() in ['yes', 'y']:
+            alt_filename = input(f"📄 {other_format} filename (no extension): ").strip() or f"{filename}_alt"
+            if other_format == 'txt':
+                save_as_txt(alt_filename, soup, scrape_header, scrape_body, scrape_footer)
+            else:
+                save_as_docx(alt_filename, soup, scrape_header, scrape_body, scrape_footer)
+
     except requests.exceptions.RequestException as e:
-        print(f"❌ Error fetching the page: {e}")
+        print(f"❌ Error: {e}")
 
 def main():
     while True:
-        url = input("🌐 Enter the URL to scrape (or type 'exit' to quit): ").strip()
+        url = input("🌐 URL to scrape (or type 'exit'): ").strip()
         if url.lower() == 'exit':
-            print("👋 Goodbye!")
+            print("👋 Exiting.")
             break
         if not url.startswith('http'):
-            print("⚠ Please enter a valid URL (including http/https).")
+            print("⚠ Please include http/https in the URL.")
             continue
         scrape_website(url)
 
