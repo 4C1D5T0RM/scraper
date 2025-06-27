@@ -45,25 +45,27 @@ def scrape_website(url):
         scrape_body = input("🔍 Do you want to scrape the BODY content? (yes/no): ").strip().lower()
         scrape_footer = input("🔍 Do you want to scrape the FOOTER content? (yes/no): ").strip().lower()
 
+        header = soup.find('header')
+        footer = soup.find('footer')
+        body = soup.find('body')
+
         # HEADER
         if scrape_header in ['yes', 'y']:
-            header = soup.find('header')
             extract_with_nesting("HEADER", header, output_lines)
         else:
             print("ℹ Skipping HEADER content.")
 
-        # FOOTER (remove before body to avoid duplication)
-        footer = soup.find('footer')
+        # FOOTER — remove early if not needed
+        if scrape_footer not in ['yes', 'y'] and footer:
+            footer.extract()
+
+        # HEADER removal from BODY if not scraped
+        if scrape_header not in ['yes', 'y'] and header:
+            header.extract()
 
         # BODY
         if scrape_body in ['yes', 'y']:
-            body = soup.find('body')
-            if body:
-                if scrape_header in ['yes', 'y'] and (header := soup.find('header')):
-                    header.extract()
-                if scrape_footer in ['yes', 'y'] and footer:
-                    footer.extract()
-                extract_with_nesting("BODY", body, output_lines)
+            extract_with_nesting("BODY", body, output_lines)
         else:
             print("ℹ Skipping BODY content.")
 
