@@ -2,6 +2,16 @@ import requests
 from bs4 import BeautifulSoup
 from docx import Document
 
+def add_runs_from_element(el, para):
+    for part in el.descendants:
+        if part.name == 'a':
+            # Skip link text entirely
+            continue
+        if part.name is None:
+            text = part.strip()
+            if text:
+                para.add_run(text)
+
 def process_list_items_docx(element, level, doc):
     lis = element.find_all('li')
     for li in lis:
@@ -11,15 +21,6 @@ def process_list_items_docx(element, level, doc):
         add_runs_from_element(li, para)
         for sublist in li.find_all(['ul', 'ol']):
             process_list_items_docx(sublist, level + 1, doc)
-
-def add_runs_from_element(el, para):
-    for part in el.descendants:
-        if part.name == 'a':
-            continue  # Skip link text entirely
-        elif part.name is None:
-            text = part.strip()
-            if text:
-                para.add_run(text)
 
 def extract_with_nesting_docx(container, doc, level=0):
     if not container:
@@ -41,6 +42,17 @@ def extract_with_nesting_docx(container, doc, level=0):
             add_runs_from_element(el, para)
         elif tag in ['UL', 'OL']:
             process_list_items_docx(el, level + 1, doc)
+
+def get_text_without_links(el):
+    parts = []
+    for part in el.descendants:
+        if part.name == 'a':
+            continue
+        if part.name is None:
+            text = part.strip()
+            if text:
+                parts.append(text)
+    return ' '.join(parts)
 
 def process_list_items_txt(container_name, element, level, output_lines):
     lis = element.find_all('li')
@@ -71,17 +83,6 @@ def extract_with_nesting_txt(container_name, container, output_lines, level=0):
         elif tag in ['UL', 'OL']:
             output_lines.append(f"{indent}{container_name} | {tag}:")
             process_list_items_txt(container_name, el, level + 1, output_lines)
-
-def get_text_without_links(el):
-    parts = []
-    for part in el.descendants:
-        if part.name == 'a':
-            continue
-        elif part.name is None:
-            text = part.strip()
-            if text:
-                parts.append(text)
-    return ' '.join(parts)
 
 def save_as_docx(filename, soup, scrape_header, scrape_body, scrape_footer):
     doc = Document()
