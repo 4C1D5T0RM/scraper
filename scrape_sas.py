@@ -3,18 +3,28 @@ from bs4 import BeautifulSoup
 from docx import Document
 
 # ---------- TEXT CLEANING ----------
-def get_text_without_links(el):
-    return ' '.join(
-        part.strip()
-        for part in el.strings
-        if not (hasattr(part.parent, 'name') and part.parent.name == 'a')
-    )
+def get_text_with_links(el):
+    """Return text from an element including hyperlink text."""
+    parts = []
+    for part in el.strings:
+        text = part.strip()
+        if not text:
+            continue
+        if hasattr(part.parent, "name") and part.parent.name == "a":
+            href = part.parent.get("href", "").strip()
+            if href:
+                parts.append(f"{text} ({href})")
+            else:
+                parts.append(text)
+        else:
+            parts.append(text)
+    return " ".join(parts)
 
 # ---------- TXT EXPORT ----------
 def process_list_items_txt(container_name, element, level, output_lines):
     lis = element.find_all('li')
     for li in lis:
-        text = get_text_without_links(li)
+        text = get_text_with_links(li)
         indent = '  ' * level
         if text:
             output_lines.append(f"{indent}{container_name} | LI (level {level}): {text}")
@@ -28,7 +38,7 @@ def extract_with_nesting_txt(container_name, container, output_lines, level=0):
     elements = container.find_all(['h1','h2','h3','h4','h5','p','ul','ol'])
     for el in elements:
         tag = el.name.upper()
-        text = get_text_without_links(el)
+        text = get_text_with_links(el)
         indent = '  ' * level
         if not text:
             continue
@@ -75,7 +85,7 @@ def save_as_txt(filename, soup, scrape_header, scrape_body, scrape_footer):
 def collect_text_set(container):
     texts = set()
     for el in container.find_all(['h1','h2','h3','h4','h5','p','li']):
-        text = get_text_without_links(el)
+        text = get_text_with_links(el)
         if text:
             texts.add(text)
     return texts
@@ -86,7 +96,7 @@ def extract_with_nesting_txt_skip_set(container_name, container, output_lines, s
     elements = container.find_all(['h1','h2','h3','h4','h5','p','ul','ol'])
     for el in elements:
         tag = el.name.upper()
-        text = get_text_without_links(el)
+        text = get_text_with_links(el)
         indent = '  ' * level
         if not text or text in skip_header or text in skip_footer:
             continue
@@ -101,14 +111,21 @@ def extract_with_nesting_txt_skip_set(container_name, container, output_lines, s
 
 # ---------- DOCX EXPORT ----------
 def add_runs_from_element(el, para):
+    """Add runs to a paragraph including text from hyperlinks."""
     added = False
     for part in el.strings:
-        if hasattr(part.parent, 'name') and part.parent.name == 'a':
-            continue
         text = part.strip()
-        if text:
+        if not text:
+            continue
+        if hasattr(part.parent, "name") and part.parent.name == "a":
+            href = part.parent.get("href", "").strip()
+            if href:
+                para.add_run(f"{text} ({href})")
+            else:
+                para.add_run(text)
+        else:
             para.add_run(text)
-            added = True
+        added = True
     return added
 
 def process_list_items_docx(element, level, doc):
